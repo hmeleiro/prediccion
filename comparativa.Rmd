@@ -232,6 +232,10 @@ precision <- mean(c(multinom_acc, multinom_acc2))
 precision_positive <- mean(c(multinom_positive_acc, multinom_positive_acc2))
 precision_negative <- mean(c(multinom_negative_acc, multinom_negative_acc2))
 
+multinom <- c(precision, precision_positive, precision_negative)
+
+
+
 mensaje <- paste0("El modelo multinomial consigue una precisión del ", round(precision*100, digits = 2), "%.")
 mensaje2 <- paste0("Acierta los positivos en un ", round(precision_positive*100, digits = 2), "% de los casos.")
 mensaje3 <- paste0("Acierta los negativos en un ", round(precision_negative*100, digits = 2), "% de los casos.")
@@ -257,6 +261,7 @@ confusion1 <- confusionMatrix(data=pred, testing$voto, positive = "1")   # Matri
 rf_acc <- confusion1$overall[1]
 rf_positive_acc <- mean(confusion1$byClass[, 3])
 rf_negative_acc <-  mean(confusion1$byClass[, 4])
+
 ```
 
 
@@ -281,6 +286,8 @@ precision <- mean(c(rf_acc, rf_acc2))
 precision_positive <- mean(c(rf_positive_acc, rf_positive_acc2))
 precision_negative <- mean(c(rf_negative_acc, rf_negative_acc2))
 
+rf <- c(precision, precision_positive, precision_negative)
+
 mensaje <- paste0("El modelo random forest consigue una precisión del ", round(precision*100, digits = 2), "%.")
 mensaje2 <- paste0("Acierta los positivos en un ", round(precision_positive*100, digits = 2), "% de los casos.")
 mensaje3 <- paste0("Acierta los negativos en un ", round(precision_negative*100, digits = 2), "% de los casos.")
@@ -288,6 +295,20 @@ mensaje3 <- paste0("Acierta los negativos en un ", round(precision_negative*100,
 print(paste(mensaje, mensaje2, mensaje3))
 
 ```
+
+
+### Resumen precisión de los dos modelos
+
+```{r}
+
+data_frame(Modelo = c("Logístico multinomial", "Random forest"),
+           Precisión = c(multinom[1], rf[1]),
+           `Precisión en los casos positivos` = c(multinom[2], rf[2]),
+           `Precisión en los casos negativos` = c(multinom[3], rf[3]))
+
+```
+
+
 
 
 <p align="justify">A continuación podemos ver la importancia de las variables en cada uno de los modelos. Ambas tablas están ordenadas en función de la importancia general media en el modelo.</p>

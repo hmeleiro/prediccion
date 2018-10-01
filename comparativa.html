@@ -336,6 +336,10 @@ precision &lt;- mean(c(multinom_acc, multinom_acc2))
 precision_positive &lt;- mean(c(multinom_positive_acc, multinom_positive_acc2))
 precision_negative &lt;- mean(c(multinom_negative_acc, multinom_negative_acc2))
 
+multinom &lt;- c(precision, precision_positive, precision_negative)
+
+
+
 mensaje &lt;- paste0(&quot;El modelo multinomial consigue una precisión del &quot;, round(precision*100, digits = 2), &quot;%.&quot;)
 mensaje2 &lt;- paste0(&quot;Acierta los positivos en un &quot;, round(precision_positive*100, digits = 2), &quot;% de los casos.&quot;)
 mensaje3 &lt;- paste0(&quot;Acierta los negativos en un &quot;, round(precision_negative*100, digits = 2), &quot;% de los casos.&quot;)
@@ -368,12 +372,25 @@ precision &lt;- mean(c(rf_acc, rf_acc2))
 precision_positive &lt;- mean(c(rf_positive_acc, rf_positive_acc2))
 precision_negative &lt;- mean(c(rf_negative_acc, rf_negative_acc2))
 
+rf &lt;- c(precision, precision_positive, precision_negative)
+
 mensaje &lt;- paste0(&quot;El modelo random forest consigue una precisión del &quot;, round(precision*100, digits = 2), &quot;%.&quot;)
 mensaje2 &lt;- paste0(&quot;Acierta los positivos en un &quot;, round(precision_positive*100, digits = 2), &quot;% de los casos.&quot;)
 mensaje3 &lt;- paste0(&quot;Acierta los negativos en un &quot;, round(precision_negative*100, digits = 2), &quot;% de los casos.&quot;)
 
 print(paste(mensaje, mensaje2, mensaje3))</code></pre>
-<pre><code>## [1] &quot;El modelo random forest consigue una precisión del 87.15%. Acierta los positivos en un 88.46% de los casos. Acierta los negativos en un 96.77% de los casos.&quot;</code></pre>
+<pre><code>## [1] &quot;El modelo random forest consigue una precisión del 87.21%. Acierta los positivos en un 88.49% de los casos. Acierta los negativos en un 96.79% de los casos.&quot;</code></pre>
+<div id="resumen-precision-de-los-dos-modelos" class="section level3">
+<h3>Resumen precisión de los dos modelos</h3>
+<pre class="r"><code>data_frame(Modelo = c(&quot;Logístico multinomial&quot;, &quot;Random forest&quot;),
+           Precisión = c(multinom[1], rf[1]),
+           `Precisión en los casos positivos` = c(multinom[2], rf[2]),
+           `Precisión en los casos negativos` = c(multinom[3], rf[3]))</code></pre>
+<pre><code>## # A tibble: 2 x 4
+##   Modelo        Precisión `Precisión en los casos… `Precisión en los caso…
+##   &lt;chr&gt;             &lt;dbl&gt;                    &lt;dbl&gt;                   &lt;dbl&gt;
+## 1 Logístico mu…     0.861                    0.869                   0.965
+## 2 Random forest     0.872                    0.885                   0.968</code></pre>
 <p align="justify">
 A continuación podemos ver la importancia de las variables en cada uno de los modelos. Ambas tablas están ordenadas en función de la importancia general media en el modelo.
 </p>
@@ -399,20 +416,21 @@ A continuación podemos ver la importancia de las variables en cada uno de los m
 ## 
 ##   variables are sorted by maximum importance across the classes
 ##                          C's Nacionalistas     PP    PSOE UP+conflus
-## recuerdoPSOE          57.791        34.027 36.404 100.000     39.947
-## recuerdoPP            38.242        31.561 89.605  36.254     34.420
-## recuerdoUP+conflus    39.629        32.259 32.580  34.582     87.649
-## recuerdoNacionalistas 35.224        63.424 28.186  24.381     24.276
-## ideologia             24.424        18.091 51.615  30.390     49.181
-## identidad             26.415        37.293 23.929  15.783     10.418
-## sit.pol                5.251        16.495 24.222  10.275     20.597
-## nacido_agrup          13.597         7.886 16.492   2.258     20.550
-## sit.econ               8.727         6.408  4.719   8.884     18.851
-## sit.econ.pasado        2.269        12.723 16.913  12.669     15.485
-## sit.pol.futuro         5.986         0.000  2.796   6.395     15.538
-## sit.econ.futuro        1.739         2.916 13.449   8.177     14.777
-## sit.pol.pasado         3.412         3.785  9.164  10.089      7.647
-## sexo                   1.865         4.235  5.608   6.154      6.658</code></pre>
+## recuerdoPSOE          60.939       33.0834 38.237 100.000     40.686
+## recuerdoPP            40.483       31.4467 97.179  38.557     37.178
+## recuerdoUP+conflus    41.767       32.5180 33.870  38.275     89.705
+## recuerdoNacionalistas 40.997       65.6446 30.564  27.224     25.918
+## ideologia             26.166       18.7283 55.928  34.727     49.733
+## identidad             29.918       40.4344 25.962  20.187     10.817
+## sit.pol                4.645       15.9719 25.579  10.756     18.045
+## sit.econ              11.298        5.9430  5.048   8.706     21.042
+## nacido_agrup          14.073        8.6491 16.214   0.000     20.269
+## sit.pol.futuro         9.604        4.8442  5.730   9.529     18.250
+## sit.econ.pasado        2.929       11.5603 16.565  13.719     13.761
+## sit.econ.futuro        3.770        0.7801 14.581   7.102     15.876
+## sit.pol.pasado         4.922        6.1393 12.228   8.139      7.250
+## sexo                   4.207        6.6811  4.699   6.548      4.699</code></pre>
+</div>
 <div id="aplicacion-del-modelo-para-imputar-el-voto-a-quienes-no-lo-declaran" class="section level3">
 <h3>Aplicación del modelo para imputar el voto a quienes no lo declaran</h3>
 <p align="justify">
@@ -465,10 +483,10 @@ print(paste0(&quot;Estimación basado en una participación del &quot;, round(pa
 <pre><code>## # A tibble: 5 x 3
 ##   voto              N pct_vv
 ##   &lt;fct&gt;         &lt;int&gt;  &lt;dbl&gt;
-## 1 C's             469   25.4
+## 1 C's             468   25.4
 ## 2 PSOE            455   24.7
 ## 3 PP              382   20.7
-## 4 UP+conflus      371   20.1
+## 4 UP+conflus      372   20.2
 ## 5 Nacionalistas   167    9.1</code></pre>
 </div>
 
