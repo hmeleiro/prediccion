@@ -1,0 +1,343 @@
+---
+title: "Aplicando random forest a la predicción de la intención de voto"
+author: "Héctor Meleiro"
+date: "1/10/2018"
+output:
+  rmarkdown::html_document:
+    theme: journal
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, results = "markup")
+```
+
+<p align="justify">A continuación pretendo comparar la precisión de dos modelos estadísticos para la predicción de la intención de voto en funciñon de una serie de variables. En primer lugar probaré con una regresión logística multinomial y posteriormente compararé los resultados con los de un modelo random forest.</p>
+
+Los predictores elegidos son los siguientes:
+
+- Edad. Agrupada en cuatro tramos siguiendo la tipología descrita por Jaime Miquel en el libro La Perestoika de Felipe VI. estos son grupos son: nacidos antes de 1939 (niños de la guerra), entre 1939 y 1958 (hijos de la autarquía), entre 1959 y 1974 (hijos de la reforma) y los nacidos después de 1974 (ciudadanos nuevos).
+- Sexo.
+- Autoubicación en el eje izquierda-derecha.
+- Autoidentificación nacional. Variable ordinal de cinco puntos que va desde identificarse solo como español a solo como de su CCAA.
+- Percepción de la situación económica presente.
+- Percepción de la evolución de la situación económica desde hace un año.
+- Valoración de la evolución de la situación económica dentro de un año.
+- Percepción de la situación política presente.
+- Valoración de la evolución de la situación política dentro de un año.
+- En paro o no.
+- Recuerdo de voto en las últimas elecciones generales.
+
+
+<p align="justify">Los datos que voy a emplear son el barómetro del CIS de octubre de 2017 y el de abril de 2018. Aplicaré el procedimiento de validación cruzada utilizando en primer lugar un barómetro para entrenar el modelo y el otro para testearlo, en segundo lugar invertiré los datos y entrenaré el modelo con los datos que anteriormente fueron utilizados para testear, y los testearé con los que fueron usados para entrenar. Finalmente hallaré la media de la precisión entre los dos modelos.</p>
+
+<p align="justify">Primero de todo comienzo importando los datos, seleccionando las variables que voy a utilizar, recodificándolas y eliminando los NS/NC.</p>
+```{r}
+library(haven)
+library(dplyr)
+library(nnet)
+library(caret)
+
+
+cis <- read_spss("3210.sav")
+
+cis$voto <- NA
+cis$voto[cis$VOTOSIMG == 1] <- "PP"
+cis$voto[cis$VOTOSIMG == 2] <- "PSOE"
+cis$voto[cis$VOTOSIMG == 4] <- "C's"
+cis$voto[cis$VOTOSIMG %in% c(3,6,7,10)] <- "UP+conflus"
+cis$voto[cis$VOTOSIMG %in% c(8, 9, 11, 12, 13)] <- "Nacionalistas"
+
+cis$recuerdo <- NA
+cis$recuerdo[cis$RECUERDO == 1] <- "PP"
+cis$recuerdo[cis$RECUERDO == 2] <- "PSOE"
+cis$recuerdo[cis$RECUERDO == 4] <- "C's"
+cis$recuerdo[cis$RECUERDO %in% c(3, 5, 6, 9)] <- "UP+conflus"
+cis$recuerdo[cis$RECUERDO %in% c(7, 8, 11, 12)] <- "Nacionalistas"
+
+
+df <- cis[, c("ESTU", "ESTUDIOS", "voto", "recuerdo", "P24", "P25", "P21", "P28", "P36", "P29", "P1", "P2", "P3", "P4", "P5", "P6", "P32", "P33", "CCAA")]
+colnames(df) <- c("ESTU", "ESTUDIOS", "voto", "recuerdo", "org.territorio", "identidad", "ideologia", "sexo", "situacion.laboral", "edad", "sit.econ", "sit.econ.pasado", "sit.econ.futuro", "sit.pol", "sit.pol.pasado", "sit.pol.futuro", "economia.personal", "economia.personal.futuro", "CCAA")
+
+cisoct <- read_spss("3191.sav")
+cisoct$PP <- NA
+cisoct$PP[cisoct$P27AR == 1] <- 1
+cisoct$PP[cisoct$P27AR != 1] <- 0
+
+cisoct$voto <- NA
+cisoct$voto[cisoct$VOTOSIMG == 1] <- "PP"
+cisoct$voto[cisoct$VOTOSIMG == 2] <- "PSOE"
+cisoct$voto[cisoct$VOTOSIMG == 4] <- "C's"
+cisoct$voto[cisoct$VOTOSIMG %in% c(3,6,7,10)] <- "UP+conflus"
+cisoct$voto[cisoct$VOTOSIMG %in% c(8,9,11,12,13)] <- "Nacionalistas"
+
+cisoct$recuerdo <- NA
+cisoct$recuerdo[cisoct$RECUERDO == 1] <- "PP"
+cisoct$recuerdo[cisoct$RECUERDO == 2] <- "PSOE"
+cisoct$recuerdo[cisoct$RECUERDO == 4] <- "C's"
+cisoct$recuerdo[cisoct$RECUERDO %in% c(3, 5, 6, 9)] <- "UP+conflus"
+cisoct$recuerdo[cisoct$RECUERDO %in% c(7, 8, 11, 12)] <- "Nacionalistas"
+
+
+oct17 <- cisoct[, c("ESTU", "ESTUDIOS", "voto", "recuerdo", "P25", "P26", "P23", "P29", "P37", "P30", "P1", "P2", "P3", "P4", "P5", "P6","P33", "P34", "CCAA")]
+colnames(oct17) <- c("ESTU", "ESTUDIOS", "voto", "recuerdo", "org.territorio", "identidad", "ideologia", "sexo", "situacion.laboral", "edad", "sit.econ", "sit.econ.pasado", "sit.econ.futuro", "sit.pol", "sit.pol.pasado", "sit.pol.futuro", "economia.personal", "economia.personal.futuro", "CCAA")
+
+
+df <- rbind(df, oct17)
+
+#df$PP <- factor(df$PP)
+df$voto <- factor(df$voto)
+
+
+##############  RECODIFICACION DE VARIABLES
+
+
+# SOCIODEMOGRAFICAS
+df$edad[df$edad == 99] <- NA
+df$sexo[df$sexo == 2] <- 0
+
+df$nacido <- 2017 - df$edad
+df$nacido_agrup <- NA
+df$nacido_agrup[df$nacido <= 1939] <- 1
+df$nacido_agrup[df$nacido > 1939 & df$nacido <= 1958] <- 2
+df$nacido_agrup[df$nacido > 1958 & df$nacido <= 1974] <- 3
+df$nacido_agrup[df$nacido > 1974] <- 4
+#df$nacido_agrup <- factor(df$nacido_agrup, levels = c(1,2,3,4), labels = c("Niños de la guerra", "Niños de la autarquía", "Niños de la reforma", "Ciudadanos nuevos"), ordered = TRUE)
+
+df$ESTUDIOS[df$ESTUDIOS %in% c(7,9)] <- NA
+
+
+# VARIABLES DE PERCEPCION ECONOMIA Y POLITICA
+df$sit.econ[df$sit.econ %in% c(8,9)] <- NA
+df$sit.econ.pasado[df$sit.econ.pasado %in% c(8,9)] <- NA
+df$sit.econ.futuro[df$sit.econ.futuro %in% c(8,9)] <- NA
+
+df$sit.pol[df$sit.pol %in% c(8,9)] <- NA
+df$sit.pol.pasado[df$sit.pol.pasado %in% c(8,9)] <- NA
+df$sit.pol.futuro[df$sit.pol.futuro %in% c(8,9)] <- NA
+
+df$economia.personal[df$economia.personal %in% c(8, 9)] <- NA
+df$economia.personal.futuro[df$economia.personal.futuro %in% c(8, 9)] <- NA
+
+df$parado <- NA
+df$parado[df$situacion.laboral != 4] <- 0
+df$parado[df$situacion.laboral == 4] <- 1
+
+df$jubilado <- NA
+df$jubilado <- 0
+df$jubilado[df$situacion.laboral %in% c(2, 3)] <- 1
+
+df$situacion.laboral_rec <- NA
+df$situacion.laboral_rec[df$situacion.laboral == 1] <- 1
+df$situacion.laboral_rec[df$situacion.laboral %in% c(2, 3)] <- 2
+df$situacion.laboral_rec[df$situacion.laboral %in% c(4, 5)] <- 3
+df$situacion.laboral_rec[df$situacion.laboral == 6] <- 4
+
+
+## VAARIABLES VALORES POLITICAS
+df$identidad[df$identidad %in% c(7,8,9)] <- NA
+df$ideologia[df$ideologia %in% c(98, 99)] <- NA
+
+
+## VARIABLE TERRITORIOS
+df$CATyPV <- NA
+df$CATyPV <- 0
+df$CATyPV[df$CCAA %in% c(9, 16)] <- 1
+
+
+## Organizacion territorial
+df$org.territorio_recode <- NA
+df$org.territorio_recode <- df$org.territorio
+df$org.territorio_recode[df$org.territorio_recode %in% c(8, 9)] <- NA
+df$org.territorio_recode <- factor(df$org.territorio_recode)
+
+df$independencia <- NA
+df$independencia[df$org.territorio == 5] <- 1
+df$independencia[df$org.territorio != 5] <- 0
+df$independencia <- factor(df$independencia)
+
+df$statu.quo <- NA
+df$statu.quo[df$org.territorio == 3] <- 1
+df$statu.quo[df$org.territorio != 3] <- 0
+df$statu.quo <- factor(df$statu.quo)
+
+df$centralizacion <- NA
+df$centralizacion <- 0
+df$centralizacion[df$org.territorio %in% c(1, 2)] <- 1
+df$centralizacion <- factor(df$centralizacion)
+
+df$descentralizacion <- NA
+df$descentralizacion <- 0
+df$descentralizacion[df$org.territorio %in% c(4, 5)] <- 1
+df$descentralizacion <- factor(df$descentralizacion)
+
+
+df <- df[, c("ESTU", "voto", "recuerdo", "identidad", "sexo", "ideologia", 
+             "sit.econ", "sit.econ.pasado", "sit.econ.futuro", "sit.pol", 
+             "sit.pol.pasado", "sit.pol.futuro", "nacido_agrup")]
+
+```
+
+
+
+<p align="justify">A continuación divido los datos para entrenar de los de testear y elimino los casos sin información (NAs).</p>
+
+```{r}
+training <- na.omit(df[df$ESTU == "3210",])
+testing <- na.omit(df[df$ESTU == "3191",])
+
+
+
+training <- training[ , -1]  # Elimino la columna del número de estudio
+testing <- testing[ , -1]
+```
+
+
+
+<p align="justify">Finalmente aplico los dos modelos estadísticos. Primero el logístico multinomial el cual proporciona una precisión media del 86,2%.</p>
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE, results = "hide"}
+## Logistico multinomial
+
+model_log <- multinom(voto~., data = training)
+```
+
+
+```{r}
+pred <- predict(model_log, newdata = testing)
+confusion <- confusionMatrix(data=pred, testing$voto, positive = "1")   # Matriz de confusion en datos nuevos
+multinom_acc <- confusion$overall[1]
+multinom_positive_acc <- mean(confusion$byClass[, 3])
+multinom_negative_acc <-  mean(confusion$byClass[, 4])
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE, results = "hide"}
+
+model_log <- multinom(voto~., data = testing)
+```
+
+
+```{r}
+
+pred <- predict(model_log, newdata = training)
+confusion <- confusionMatrix(data=pred, training$voto, positive = "1")   # Matriz de confusion en datos nuevos
+multinom_acc2 <- confusion$overall[1]
+multinom_positive_acc2 <- mean(confusion$byClass[, 3])
+multinom_negative_acc2 <-  mean(confusion$byClass[, 4])
+
+
+
+
+precision <- mean(c(multinom_acc, multinom_acc2))
+precision_positive <- mean(c(multinom_positive_acc, multinom_positive_acc2))
+precision_negative <- mean(c(multinom_negative_acc, multinom_negative_acc2))
+
+mensaje <- paste0("El modelo multinomial consigue una precisión del ", round(precision*100, digits = 2), "%.")
+mensaje2 <- paste0("Acierta los positivos en un ", round(precision_positive*100, digits = 2), "% de los casos.")
+mensaje3 <- paste0("Acierta los negativos en un ", round(precision_negative*100, digits = 2), "% de los casos.")
+
+print(paste(mensaje, mensaje2, mensaje3))
+
+```
+
+
+<p align="justify">A continuación, hago lo mismo con random forest y consigo una precisión media del 87,2%. Una precisión un punto porcentual mayor con random forest que con una tradicional logística multinomial.<p/>
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+## Random Forest
+
+model_rf <- train(voto ~., data = training, importance = TRUE)
+```
+
+
+```{r}
+pred <- predict(model_rf, newdata = testing) ###  Testear el modelo en otros datos
+confusion1 <- confusionMatrix(data=pred, testing$voto, positive = "1")   # Matriz de confusion en datos nuevos
+
+rf_acc <- confusion1$overall[1]
+rf_positive_acc <- mean(confusion1$byClass[, 3])
+rf_negative_acc <-  mean(confusion1$byClass[, 4])
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+model_rf <- train(voto ~., data = testing, importance = TRUE)
+```
+
+
+```{r}
+
+pred <- predict(model_rf, newdata = training) ###  Testear el modelo en otros datos
+
+confusion2 <- confusionMatrix(data=pred, training$voto, positive = "1")   # Matriz de confusion en datos nuevos
+
+rf_acc2 <- confusion2$overall[1]
+rf_positive_acc2 <- mean(confusion2$byClass[, 3])
+rf_negative_acc2 <-  mean(confusion2$byClass[, 4])
+
+
+precision <- mean(c(rf_acc, rf_acc2))
+precision_positive <- mean(c(rf_positive_acc, rf_positive_acc2))
+precision_negative <- mean(c(rf_negative_acc, rf_negative_acc2))
+
+mensaje <- paste0("El modelo random forest consigue una precisión del ", round(precision*100, digits = 2), "%.")
+mensaje2 <- paste0("Acierta los positivos en un ", round(precision_positive*100, digits = 2), "% de los casos.")
+mensaje3 <- paste0("Acierta los negativos en un ", round(precision_negative*100, digits = 2), "% de los casos.")
+
+print(paste(mensaje, mensaje2, mensaje3))
+
+```
+
+
+<p align="justify">A continuación podemos ver la importancia de las variables en cada uno de los modelos. Ambas tablas están ordenadas en función de la importancia general media en el modelo.</p>
+
+```{r}
+data_frame(Variables = row.names(varImp(model_log)), Overall = varImp(model_log)$Overall) %>% arrange(-Overall) %>% head(n  = 13)
+varImp(model_rf)
+```
+
+
+
+### Aplicación del modelo para imputar el voto a quienes no lo declaran
+
+<p align="justify">A continuación aplicamos el modelo random forest para predecir el voto de los individuos encuestados que no lo declaran. Para ello utilizo el estudio 3210 (barómetro de abril de 2018). Primero separo el voto oculto (772 casos) del declarado (1694). Segundo, de los casos con voto oculto elimino los que no responden a alguna de las preguntas utilizadas para predecir el voto; eso nos deja con 151 individuos de los que vamos a intentar averiguar a quién votarían. A continuación aplicamos el modelo para predecir el voto y volvemos a unir el voto oculto (del que ya tenemos una predicción imputada) con el declarado. Esto nos deja con 1845 casos con declaración o imputación de voto de los 2466 totales que tiene el estudio (el 74,8%).</p>
+
+<p align="justify">Es importante tener en cuenta que si calculamos ahora los porcentajes de voto para cada partido estaríamos haciendo una estimación con una participación esperada excesivamente alta (el 74,8%): del voto declarado e imputado sabemos que habrá gente que finalmente no irá a votar. Lo normal en estos casos sería utilizar preguntas de control de la participación típicas de las encuestas preelectorales ("En una escala del uno al diez, ¿con qué probabilidad va a ir usted a votar?"), pero como no tenemos esa variable para filtrar (y esto, en el fondo, es un ejercicio) vamos a realizar la estimación con ese escenario algo irreal. </p>
+
+<p align="justify">También hay que tener en cuenta que, puesto que hemos asumido que solo irán a votar las personas que han declarado su voto y a las que se lo hemos imputado (dejando de lado las personas que no han declarado su voto y que no han contestado a alguna de las variables predictoras) y los porcentajes los estamos calculando sobre ese total, el porcentaje de la estimación será sobre voto valido, no sobre censo.</p>
+
+<p align="justify">Los resultados de la estimación nos dicen entonces que las elecciones las ganaría Ciudadanos con un 25,5% sobre voto válido, seguido del PSOE con un 24,7%, el PP sería tercero con un 20,8% y en última posición Unidos Podemos con el 20,1%. </p>
+
+```{r}
+## Imputación de voto para los casos que no dicen a quién van a votar
+
+ESTU3210 <- df[df$ESTU == "3210",]
+
+votodeclarado <- ESTU3210[!is.na(ESTU3210$voto),]
+votooculto <- ESTU3210[is.na(ESTU3210$voto),]
+votooculto <- na.omit(votooculto[3:13])
+
+
+
+votooculto$voto <- predict(model_rf, newdata = votooculto)
+
+#votooculto %>% group_by(voto) %>% summarise(N = n()) %>% mutate(pct = N/sum(N))
+
+votooculto$imputado <- TRUE
+votooculto$ESTU <- "3210"
+
+votodeclarado$imputado <- FALSE
+
+votodeclarado$ESTU <- as.character(votodeclarado$ESTU)
+
+
+final <- rbind(votodeclarado, votooculto)
+
+participacion <- nrow(final) / nrow(ESTU3210)
+
+print(paste0("Estimación basado en una participación del ", round(participacion*100, 1), " %."))
+final %>% group_by(imputado) %>% summarise(N = n()) %>% mutate(pct = round((N/sum(N))*100, 1)) %>% arrange(-pct)
+final %>% group_by(voto) %>% summarise(N = n()) %>% mutate(pct_vv = round((N/sum(N))*100, 1)) %>% arrange(-pct_vv)
+```
+
